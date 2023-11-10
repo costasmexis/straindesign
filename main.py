@@ -16,7 +16,7 @@ from sklearn.model_selection import KFold
 from tqdm import tqdm
 from utils import *
 
-PATH = 'limonene_data.csv'
+PATH = 'data/limonene_data.csv'
 RESPONSE_VARS = ['Limonene']
 INPUT_VARS = ['ATOB_ECOLI','ERG8_YEAST','IDI_ECOLI',
                    'KIME_YEAST','MVD1_YEAST','Q40322_MENSP',
@@ -45,8 +45,8 @@ plot_corr_heatmap(data_A)
 # %%
 ''' ML part '''
 # Split data into input and response variables
-X = data_A[INPUT_VARS]
-y = data_A[RESPONSE_VARS]
+X = data_A[INPUT_VARS].values
+y = data_A[RESPONSE_VARS].values.ravel()
 # Define dictionary of estimators
 estimators = {
     'LR': LinearRegression(),
@@ -65,10 +65,10 @@ params = {
         'min_samples_leaf': [1, 2, 3, 4, 5],
     },
     'RF': {
-        'n_estimators': [10, 50, 100, 200, 500],
-        'max_depth': [2, 4, 6, 8, 10, 12, 14, 16],
-        'min_samples_split': [2, 4, 6, 8, 10],
-        'min_samples_leaf': [1, 2, 3, 4, 5],
+        'n_estimators': [10, 50, 100],
+        'max_depth': [2, 4, 6, 8, 10, 12],
+        'min_samples_split': [2, 4, 6],
+        'min_samples_leaf': [1, 2, 3],
     },
     'SVR': {
         'kernel': ['linear', 'rbf', 'sigmoid'],
@@ -78,41 +78,21 @@ params = {
     }
 }
 
-def nested_cv(model, p_grid, X, y, n_trials = 10):
-    nested_scores = []
-    for i in tqdm(range(n_trials)):
-        
-        inner_cv = KFold(n_splits=3, shuffle=True, random_state=i)
-        outer_cv = KFold(n_splits=5, shuffle=True, random_state=i)
-
-        # Nested CV with parameter optimization
-        clf = GridSearchCV(estimator=model, scoring='neg_mean_absolute_error', param_grid=p_grid, 
-                                 cv=inner_cv)
-        
-        nested_score = cross_val_score(clf, X=X, y=y, 
-                                       scoring='neg_mean_absolute_error', cv=outer_cv)
-        
-        nested_scores.append(list(nested_score))
-    return clf, nested_scores
-
 nested_LR, nested_scores_LR = nested_cv(estimators['LR'], params['LR'], X, y)
 nested_DT, nested_scores_DT = nested_cv(estimators['DT'], params['DT'], X, y)
 nested_RF, nested_scores_RF = nested_cv(estimators['RF'], params['RF'], X, y)
 nested_SVR, nested_scores_SVR = nested_cv(estimators['SVR'], params['SVR'], X, y)
 
 # %%
+# List of lists to list of elements
 nested_scores_LR = [item for sublist in nested_scores_LR for item in sublist]
 nested_scores_DT = [item for sublist in nested_scores_DT for item in sublist]
 nested_scores_RF = [item for sublist in nested_scores_RF for item in sublist]
 nested_scores_SVR = [item for sublist in nested_scores_SVR for item in sublist]
 
-# create box plot
-fig, ax = plt.subplots()
-positions = [1, 2, 3, 4, 5] # x-axis positions for each box plot
-ax.boxplot([nested_scores_LR, nested_scores_DT, nested_scores_RF, nested_scores_SVR], positions=positions, widths=0.1)
-ax.set_title('Model Comparison', fontweight='bold')
-ax.set_ylabel('MAE')
-ax.set_xticks(positions)
-ax.set_xticklabels(['LR', 'DT', 'RF', 'SVR'])
+# Box plot of lists of scores
+plt.boxplot([nested_scores_LR, nested_scores_DT, nested_scores_RF, nested_scores_SVR])
+plt.xticks([1, 2, 3, 4], ['LR', 'DT', 'RF', 'SVR'])
+plt.ylabel('MAE')
 plt.show()
 # %%

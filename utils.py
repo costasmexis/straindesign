@@ -4,6 +4,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
+from sklearn.model_selection import cross_val_score, cross_validate, cross_val_predict, GridSearchCV
+from sklearn.metrics import mean_squared_error, r2_score
+from sklearn.model_selection import KFold
+from tqdm import tqdm
 
 def read_data(path: str) -> pd.DataFrame:
     ''' Read in data from csv file '''
@@ -76,3 +80,20 @@ def tsne_analysis(df, n_components=2, perplexity=12):
     for i, txt in enumerate(tsne_df.index):
         plt.annotate(txt, (tsne_df[0][i], tsne_df[1][i]))
     plt.show()
+
+def nested_cv(model, p_grid, X, y, n_trials = 3):
+    nested_scores = []
+    for i in tqdm(range(n_trials)):
+        
+        inner_cv = KFold(n_splits=3, shuffle=True, random_state=i)
+        outer_cv = KFold(n_splits=5, shuffle=True, random_state=i)
+
+        # Nested CV with parameter optimization
+        clf = GridSearchCV(estimator=model, scoring='neg_mean_absolute_error', param_grid=p_grid, 
+                                 cv=inner_cv)
+        
+        nested_score = cross_val_score(clf, X=X, y=y, 
+                                       scoring='neg_mean_absolute_error', cv=outer_cv)
+        
+        nested_scores.append(list(nested_score))
+    return clf, nested_scores
