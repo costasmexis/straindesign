@@ -1,11 +1,10 @@
-
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 from sklearn.model_selection import cross_val_score, cross_validate, cross_val_predict, GridSearchCV
-from sklearn.metrics import mean_squared_error, r2_score
+from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
 from sklearn.model_selection import KFold
 from tqdm import tqdm
 
@@ -21,17 +20,14 @@ def transform_data(df: pd.DataFrame) -> pd.DataFrame:
     new_columns = df['Type'].unique()
     data = pd.DataFrame()
     data.index = df['Line Name'].unique()
-
     # add new columns to data
     for col in new_columns:
         data[col] = 0
-
     # fill in data
     for l in data.index:
         for c in new_columns:
             value = df[(df['Line Name'] == l) & (df['Type'] == c)]['value'].values
             data.loc[l, c] = value
-    
     # drop OD column
     data.drop('Optical Density', axis=1, inplace=True)
     return data
@@ -84,16 +80,27 @@ def tsne_analysis(df, n_components=2, perplexity=12):
 def nested_cv(model, p_grid, X, y, n_trials = 3):
     nested_scores = []
     for i in tqdm(range(n_trials)):
-        
         inner_cv = KFold(n_splits=3, shuffle=True, random_state=i)
         outer_cv = KFold(n_splits=5, shuffle=True, random_state=i)
-
         # Nested CV with parameter optimization
         clf = GridSearchCV(estimator=model, scoring='neg_mean_absolute_error', param_grid=p_grid, 
                                  cv=inner_cv)
-        
         nested_score = cross_val_score(clf, X=X, y=y, 
                                        scoring='neg_mean_absolute_error', cv=outer_cv)
-        
         nested_scores.append(list(nested_score))
     return clf, nested_scores
+
+def plot_pred_vs_actual(y_true, y_pred, model_name) -> None:
+    # Plot true vs predicted values
+    plt.scatter(y_true, y_pred)
+    plt.xlim(-50, 200)
+    plt.ylim(-100, 250)
+    plt.plot([-50, 200], [-50, 200], 'k--')
+    plt.xlabel('True Values')
+    plt.ylabel('Predictions')
+    r2 = r2_score(y_true, y_pred)
+    mae = mean_absolute_error(y_true, y_pred)
+    plt.text(-40, 220, f'R2: {r2:.2f}')
+    plt.text(-40, 200, f'MAE: {mae:.2f}')
+    plt.title(model_name)
+    plt.show()
