@@ -19,6 +19,8 @@ from xgboost import XGBRegressor
 from tqdm import tqdm
 from conf import *
 from utils import *
+import warnings
+warnings.filterwarnings("ignore")
 
 # %%
 ''' Read original data and transform it for analysis'''
@@ -45,6 +47,32 @@ y_val = val[RESPONSE_VARS]
 X_test = data_B[INPUT_VARS]
 y_test = data_B[RESPONSE_VARS]
 
+# %%
+''' Outlier detection ''' 
+from sklearn.cluster import DBSCAN
+from sklearn.neighbors import NearestNeighbors
+
+def optimal_epsilon(df) -> None:
+    ''' The optimal value for epsilon will be found at the point of maximum curvature. '''
+    neigh = NearestNeighbors(n_neighbors=2)
+    nbrs = neigh.fit(df)
+    distances, indices = nbrs.kneighbors(df)
+    distances = np.sort(distances, axis=0)
+    distances = distances[:,1]
+    plt.plot(distances)
+    plt.show()
+
+def outlier_detection(df, method='DBSCAN'):
+    model = DBSCAN(min_samples=3, eps=10)    
+    clusters = model.fit_predict(df)
+    return model, clusters
+
+model, clusters = outlier_detection(train)
+train['cluster'] = clusters
+train = train[train['cluster'] != -1]
+train.drop(columns=['cluster'], inplace=True)
+print(f'After outlier detection, train set shape: {train.shape}')
+
 # %% 
 ''' Train ML model on train set '''
 params_knn = {'n_neighbors': [2, 4, 6, 8], 'weights': ['uniform', 'distance']}
@@ -65,7 +93,7 @@ metadata.detect_from_dataframe(data=X_train)
 ctgan = CTGANSynthesizer(metadata)
 ctgan.fit(X_train)
 
-gen = ctgan.sample(500)
+gen = ctgan.sample(30)
 X_gen = gen[INPUT_VARS]
 y_gen = model.predict(X_gen)
 y_gen = pd.DataFrame(y_gen, columns=y_train.columns)
@@ -111,7 +139,9 @@ _ = model_validation(grid, X_train_gen, y_train_gen, X_test, y_test, 'Real and S
 # %%
 from table_evaluator import TableEvaluator
 
-table_evaluator = TableEvaluator(X_train, X_gen)
+gen['Limonene'] = y_gen['Limonene'].values
+
+table_evaluator = TableEvaluator(train, gen)
 table_evaluator.visual_evaluation()
 plot_corr_heatmap(gen)
 plot_corr_heatmap(train)
