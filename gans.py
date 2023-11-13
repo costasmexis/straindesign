@@ -107,11 +107,6 @@ y = dfout.values
 
 history = nn.fit(x, y, epochs=100)
 
-# save the model to disk
-# While not technically necessary, this shows how we can load a previously saved model into
-# our optimization formulation)
-nn.save('reformer_nn_relu')
-
 # %%
 ''' OMLT '''
 # first, create the Pyomo model
@@ -119,7 +114,7 @@ m = pyo.ConcreteModel()
 # create the OmltBlock to hold the neural network model
 m.reformer = OmltBlock()
 # load the Keras model
-nn_reformer = keras.models.load_model('reformer_nn_relu', compile=False)
+nn_reformer = nn
 
 # Note: The neural network is in the scaled space. We want access to the
 # variables in the unscaled space. Therefore, we need to tell OMLT about the
@@ -147,10 +142,10 @@ m.obj = pyo.Objective(expr=m.reformer.outputs[limonene_idx], sense=pyo.maximize)
 solver = pyo.SolverFactory('gurobi')
 status = solver.solve(m, tee=False)
 
-print('Bypass Fraction:', pyo.value(m.reformer.inputs[0]))
-print('NG Steam Ratio:', pyo.value(m.reformer.inputs[1]))
-print('H2 Concentration:', pyo.value(m.reformer.outputs[h2_idx]))
-print('N2 Concentration:', pyo.value(m.reformer.outputs[n2_idx]))
+for i in range(len(inputs)):
+    print(f'{inputs[i]}:', pyo.value(m.reformer.inputs[i]))
+
+print('Limonene: ', pyo.value(m.reformer.outputs[limonene_idx]))
 
 # %%
 ''' SHAP '''
