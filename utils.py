@@ -6,6 +6,7 @@ from sklearn.manifold import TSNE
 from sklearn.model_selection import cross_val_score, cross_validate, cross_val_predict, GridSearchCV
 from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
 from sklearn.model_selection import KFold
+from config import *
 from tqdm import tqdm
 
 def read_data(path: str) -> pd.DataFrame:
@@ -104,3 +105,9 @@ def plot_pred_vs_actual(y_true, y_pred, model_name) -> None:
     plt.text(-40, 200, f'MAE: {mae:.2f}')
     plt.title(model_name)
     plt.show()
+
+def cv_on_whole_train_set(data, model) -> None:
+    X = data[INPUT_VARS]
+    y = data[RESPONSE_VARS]
+    y_pred = cross_val_predict(model, X, y, cv=5)
+    plot_pred_vs_actual(y, y_pred, 'CV')

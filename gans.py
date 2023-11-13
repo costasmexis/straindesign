@@ -20,7 +20,7 @@ from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
 from sklearn.model_selection import KFold
 from xgboost import XGBRegressor
 from tqdm import tqdm
-from conf import *
+from config import *
 from utils import *
 import warnings
 warnings.filterwarnings("ignore")
@@ -45,12 +45,6 @@ y_test = data_B[RESPONSE_VARS]
 
 # %% 
 ''' Train ML model on train set '''
-def cv_on_whole_train_set(data, model) -> None:
-    X = data[INPUT_VARS]
-    y = data[RESPONSE_VARS]
-    y_pred = cross_val_predict(model, X, y, cv=5)
-    plot_pred_vs_actual(y, y_pred, 'CV')
-
 params_knn = {'n_neighbors': [2, 4, 6, 8], 'weights': ['uniform', 'distance']}
 params_svr = {'kernel': ['linear', 'rbf', 'sigmoid'], 'gamma': [0.001, 0.01, 0.05, 0.1, 1], 
               'C': [5, 10, 20, 50, 100, 150, 200], 'epsilon': [0.001, 0.1, 0.2, 0.5, 1.0]}
@@ -66,7 +60,7 @@ cv_on_whole_train_set(data, model)
 # import the necessary packages
 from omlt import OmltBlock, OffsetScaling
 from omlt.io.keras import load_keras_sequential
-from omlt.neuralnet import ReluBigMFormulation
+from omlt.neuralnet import ReluBigMFormulation, FullSpaceSmoothNNFormulation
 import pyomo.environ as pyo
 import pandas as pd
 import tensorflow.keras as keras
@@ -87,27 +81,32 @@ y_offset, y_factor = dfout.mean().to_dict(), dfout.std().to_dict()
 dfin = (dfin - dfin.mean()).divide(dfin.std())
 dfout = (dfout - dfout.mean()).divide(dfout.std())
 
+x = dfin.values
+y = dfout.values
+
 # capture the minimum and maximum values of the scaled inputs
 # so we don't use the model outside the valid range
 scaled_lb = dfin.min()[inputs].values
 scaled_ub = dfin.max()[inputs].values
 
 # create our Keras Sequential model
-nn = Sequential(name='reformer_relu_4_20')
-nn.add(Dense(units=10, input_dim=len(inputs), activation='relu'))
-nn.add(Dense(units=10, activation='relu'))
-nn.add(Dense(units=10, activation='relu'))
-nn.add(Dense(units=10, activation='relu'))
-nn.add(Dense(units=len(outputs)))
-nn.compile(optimizer=Adam(), loss='mse')
+nn = Sequential(name='ANN')
+nn.add(Dense(units=516, input_dim=len(inputs), activation='relu'))
+nn.add(Dense(1))
+nn.compile(optimizer=Adam(), loss='mean_absolute_error', metrics=['mean_absolute_error'])
 
-# train our model
-x = dfin.values
-y = dfout.values
+history = nn.fit(x, y, epochs=20)
 
-history = nn.fit(x, y, epochs=100)
+# How to get predictions from trained ANN
+# y_pred = nn.predict(x)
+# y_pred = y_pred * y_factor['Limonene'] + y_offset['Limonene']
 
-# %%
+x_test = (X_test - x_offset).divide(x_factor)
+x_test = np.array(x_test)
+predictions = nn.predict(x_test)
+predictions = predictions * y_factor['Limonene'] + y_offset['Limonene']
+print(predictions)
+
 ''' OMLT '''
 # first, create the Pyomo model
 m = pyo.ConcreteModel()
@@ -131,6 +130,7 @@ scaled_input_bounds = {i: (scaled_lb[i], scaled_ub[i]) for i in range(len(inputs
 # create a network definition from the Keras model
 net = load_keras_sequential(nn_reformer, scaling_object=scaler, scaled_input_bounds=scaled_input_bounds)
 
+
 # create the variables and constraints for the neural network in Pyomo
 m.reformer.build_formulation(ReluBigMFormulation(net))
 
@@ -139,7 +139,7 @@ limonene_idx = outputs.index('Limonene')
 m.obj = pyo.Objective(expr=m.reformer.outputs[limonene_idx], sense=pyo.maximize)
 
 # now solve the optimization problem (this may take some time)
-solver = pyo.SolverFactory('gurobi')
+solver = pyo.SolverFactory('cplex')
 status = solver.solve(m, tee=False)
 
 for i in range(len(inputs)):
