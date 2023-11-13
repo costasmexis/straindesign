@@ -38,65 +38,68 @@ data_B = data[data.index.isin(DBTL_B)]
 
 # %%
 ''' Data split '''
-# Split data_A to train & valdiation set
-train_size = int(0.8*data_A.shape[0])
-train = data_A.iloc[:train_size, :]
-val = data_A.iloc[train_size:, :]
-# Split train and val to X and y
-X_train = train[INPUT_VARS]
-y_train = train[RESPONSE_VARS]
-X_val = val[INPUT_VARS]
-y_val = val[RESPONSE_VARS]
-# Split data_B to X and y test
+X_train = data_A[INPUT_VARS]
+y_train = data_A[RESPONSE_VARS]
 X_test = data_B[INPUT_VARS]
 y_test = data_B[RESPONSE_VARS]
 
-# %%
-''' Outlier detection ''' 
-def optimal_epsilon(df) -> None:
-    ''' The optimal value for epsilon will be found at the point of maximum curvature. '''
-    neigh = NearestNeighbors(n_neighbors=2)
-    nbrs = neigh.fit(df)
-    distances, indices = nbrs.kneighbors(df)
-    distances = np.sort(distances, axis=0)
-    distances = distances[:,1]
-    plt.plot(distances)
-    plt.show()
-
-def outlier_detection(df, method='DBSCAN'):
-    model = DBSCAN(min_samples=3, eps=10)    
-    clusters = model.fit_predict(df)
-    df['cluster'] = clusters
-    df = df[df['cluster'] != -1]
-    df.drop(columns=['cluster'], inplace=True)
-    print(f'After outlier detection, df set shape: {df.shape}')
-
-    X = df[INPUT_VARS]
-    y = df[RESPONSE_VARS]
-    return X, y
-
 # %% 
 ''' Train ML model on train set '''
-params_knn = {'n_neighbors': [2, 4, 6, 8], 'weights': ['uniform', 'distance']}
-params_svr = {'kernel': ['linear', 'rbf', 'sigmoid'], 'gamma': [0.001, 0.01, 0.05, 0.1, 1], 
-              'C': [5, 10, 20, 50, 100], 'epsilon': [0.001, 0.1, 0.2, 0.5, 1.0]}
-
-# grid = GridSearchCV(KNeighborsRegressor(n_jobs=-1), params_knn, scoring='neg_mean_absolute_error', cv=5, n_jobs=-1)
-grid = GridSearchCV(SVR(), params_svr, scoring='neg_mean_absolute_error', cv=5, n_jobs=-1)
-
 def cv_on_whole_train_set(data, model) -> None:
     X = data[INPUT_VARS]
     y = data[RESPONSE_VARS]
-
     y_pred = cross_val_predict(model, X, y, cv=5)
     plot_pred_vs_actual(y, y_pred, 'CV')
 
-X_train = data_A[INPUT_VARS]
-y_train = data_A[RESPONSE_VARS]
+params_knn = {'n_neighbors': [2, 4, 6, 8], 'weights': ['uniform', 'distance']}
+params_svr = {'kernel': ['linear', 'rbf', 'sigmoid'], 'gamma': [0.001, 0.01, 0.05, 0.1, 1], 
+              'C': [5, 10, 20, 50, 100, 150, 200], 'epsilon': [0.001, 0.1, 0.2, 0.5, 1.0]}
 
-grid.fit(X_train, y_train)
+# grid = GridSearchCV(KNeighborsRegressor(n_jobs=-1), params_knn, scoring='neg_mean_absolute_error', cv=5, n_jobs=-1)
+grid = GridSearchCV(SVR(), params_svr, scoring='neg_mean_absolute_error', cv=5, n_jobs=-1)
+grid.fit(X_train, y_train.values.ravel())
 model = grid.best_estimator_
+print(f'Best model: {model}')
 cv_on_whole_train_set(data, model)
+
+# %%
+''' SHAP '''
+import shap
+
+explainer = shap.KernelExplainer(model.predict, X_train)
+shap_values = explainer.shap_values(X_train)
+
+# Summary plot
+shap.summary_plot(shap_values, X_train)
+# Dependence plot
+shap.dependence_plot('Q40322_MENSP', shap_values, X_train)
+
+shap.initjs()
+
+def shap_plot(j):
+    explainerModel = shap.KernelExplainer(model.predict, X_train)
+    shap_values_Model = explainerModel.shap_values(X_train)
+    p = shap.force_plot(explainerModel.expected_value, shap_values_Model[j], X_train.iloc[[j]])
+    return p
+
+# %%
+''' Get sub-strain and validation data '''
+train_size = int(0.8 * data_A.shape[0])
+sub_train = data_A.iloc[:train_size, :]
+val = data_A.iloc[train_size:, :]
+X_sub_train = sub_train[INPUT_VARS]
+y_sub_train = sub_train[RESPONSE_VARS]
+X_val = val[INPUT_VARS]
+y_val = val[RESPONSE_VARS]
+
+# grid = GridSearchCV(KNeighborsRegressor(n_jobs=-1), params_knn, scoring='neg_mean_absolute_error', cv=5, n_jobs=-1)
+grid = GridSearchCV(SVR(), params_svr, scoring='neg_mean_absolute_error', cv=5, n_jobs=-1)
+grid.fit(X_sub_train, y_sub_train.values.ravel())
+model = grid.best_estimator_
+print(f'Best model: {model}')
+
+y_pred = model.predict(X_val)
+plot_pred_vs_actual(y_val, y_pred, 'Validation')
 
 # %%
 ''' Generate synthetic data '''
@@ -104,20 +107,23 @@ from sdv.single_table import CTGANSynthesizer, GaussianCopulaSynthesizer, Copula
 from sdv.metadata import SingleTableMetadata
 
 metadata = SingleTableMetadata()
-metadata.detect_from_dataframe(data=X_train)
+metadata.detect_from_dataframe(data=data_A)
 
-ctgan = CTGANSynthesizer(metadata, 
-                         embedding_dim=1028)
-ctgan.fit(X_train)
+ctgan = CTGANSynthesizer(metadata, batch_size=10, epochs=100, 
+                         embedding_dim=10, 
+                         cuda=True, verbose=True)
+ctgan.fit(data_A)
 
-X_gen = ctgan.sample(100)
-y_gen = model.predict(X_gen)
-y_gen = pd.DataFrame(y_gen, columns=y_train.columns)
-data_gen = X_gen.copy()
-data_gen['Limonene'] = y_gen['Limonene'].values
-data_gen = data_gen[data_gen['Limonene'] > 0]
+data_gen = ctgan.sample(30)
 X_gen = data_gen[INPUT_VARS]
 y_gen = data_gen[RESPONSE_VARS]
+
+print(f'Generated data shape: {data_gen.shape}')
+
+grid.fit(X_gen, y_gen.values.ravel())
+model = grid.best_estimator_
+print(f'Best model: {model}')
+cv_on_whole_train_set(data, model)
 
 # %%
 params_knn = {'n_neighbors': [2, 4, 6, 8], 'weights': ['uniform', 'distance']}
