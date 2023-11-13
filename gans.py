@@ -63,6 +63,96 @@ print(f'Best model: {model}')
 cv_on_whole_train_set(data, model)
 
 # %%
+# import the necessary packages
+from omlt import OmltBlock, OffsetScaling
+from omlt.io.keras import load_keras_sequential
+from omlt.neuralnet import ReluBigMFormulation
+import pyomo.environ as pyo
+import pandas as pd
+import tensorflow.keras as keras
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense
+from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.callbacks import ModelCheckpoint
+
+dfin = X_train
+dfout = y_train
+
+inputs = INPUT_VARS
+outputs = RESPONSE_VARS
+
+x_offset, x_factor = dfin.mean().to_dict(), dfin.std().to_dict()
+y_offset, y_factor = dfout.mean().to_dict(), dfout.std().to_dict()
+
+dfin = (dfin - dfin.mean()).divide(dfin.std())
+dfout = (dfout - dfout.mean()).divide(dfout.std())
+
+# capture the minimum and maximum values of the scaled inputs
+# so we don't use the model outside the valid range
+scaled_lb = dfin.min()[inputs].values
+scaled_ub = dfin.max()[inputs].values
+
+# create our Keras Sequential model
+nn = Sequential(name='reformer_relu_4_20')
+nn.add(Dense(units=10, input_dim=len(inputs), activation='relu'))
+nn.add(Dense(units=10, activation='relu'))
+nn.add(Dense(units=10, activation='relu'))
+nn.add(Dense(units=10, activation='relu'))
+nn.add(Dense(units=len(outputs)))
+nn.compile(optimizer=Adam(), loss='mse')
+
+# train our model
+x = dfin.values
+y = dfout.values
+
+history = nn.fit(x, y, epochs=100)
+
+# save the model to disk
+# While not technically necessary, this shows how we can load a previously saved model into
+# our optimization formulation)
+nn.save('reformer_nn_relu')
+
+# %%
+''' OMLT '''
+# first, create the Pyomo model
+m = pyo.ConcreteModel()
+# create the OmltBlock to hold the neural network model
+m.reformer = OmltBlock()
+# load the Keras model
+nn_reformer = keras.models.load_model('reformer_nn_relu', compile=False)
+
+# Note: The neural network is in the scaled space. We want access to the
+# variables in the unscaled space. Therefore, we need to tell OMLT about the
+# scaling factors
+scaler = OffsetScaling(
+        offset_inputs={i: x_offset[inputs[i]] for i in range(len(inputs))},
+        factor_inputs={i: x_factor[inputs[i]] for i in range(len(inputs))},
+        offset_outputs={i: y_offset[outputs[i]] for i in range(len(outputs))},
+        factor_outputs={i: y_factor[outputs[i]] for i in range(len(outputs))}
+    )
+
+scaled_input_bounds = {i: (scaled_lb[i], scaled_ub[i]) for i in range(len(inputs))}
+
+# create a network definition from the Keras model
+net = load_keras_sequential(nn_reformer, scaling_object=scaler, scaled_input_bounds=scaled_input_bounds)
+
+# create the variables and constraints for the neural network in Pyomo
+m.reformer.build_formulation(ReluBigMFormulation(net))
+
+# now add the objective and the constraints
+limonene_idx = outputs.index('Limonene')
+m.obj = pyo.Objective(expr=m.reformer.outputs[limonene_idx], sense=pyo.maximize)
+
+# now solve the optimization problem (this may take some time)
+solver = pyo.SolverFactory('gurobi')
+status = solver.solve(m, tee=False)
+
+print('Bypass Fraction:', pyo.value(m.reformer.inputs[0]))
+print('NG Steam Ratio:', pyo.value(m.reformer.inputs[1]))
+print('H2 Concentration:', pyo.value(m.reformer.outputs[h2_idx]))
+print('N2 Concentration:', pyo.value(m.reformer.outputs[n2_idx]))
+
+# %%
 ''' SHAP '''
 import shap
 
@@ -81,6 +171,16 @@ def shap_plot(j):
     shap_values_Model = explainerModel.shap_values(X_train)
     p = shap.force_plot(explainerModel.expected_value, shap_values_Model[j], X_train.iloc[[j]])
     return p
+
+
+
+
+
+
+
+
+
+
 
 # %%
 ''' Get sub-strain and validation data '''
