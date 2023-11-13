@@ -1,4 +1,5 @@
 #%%
+''' Import libraries '''
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -13,6 +14,8 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.neighbors import KNeighborsRegressor
 from sklearn.neural_network import MLPRegressor
 from sklearn.svm import SVR
+from sklearn.cluster import DBSCAN
+from sklearn.neighbors import NearestNeighbors
 from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
 from sklearn.model_selection import KFold
 from xgboost import XGBRegressor
@@ -34,6 +37,7 @@ data_A = data[data.index.isin(DBTL_A)]
 data_B = data[data.index.isin(DBTL_B)] 
 
 # %%
+''' Data split '''
 # Split data_A to train & valdiation set
 train_size = int(0.8*data_A.shape[0])
 train = data_A.iloc[:train_size, :]
@@ -49,9 +53,6 @@ y_test = data_B[RESPONSE_VARS]
 
 # %%
 ''' Outlier detection ''' 
-from sklearn.cluster import DBSCAN
-from sklearn.neighbors import NearestNeighbors
-
 def optimal_epsilon(df) -> None:
     ''' The optimal value for epsilon will be found at the point of maximum curvature. '''
     neigh = NearestNeighbors(n_neighbors=2)
@@ -65,42 +66,63 @@ def optimal_epsilon(df) -> None:
 def outlier_detection(df, method='DBSCAN'):
     model = DBSCAN(min_samples=3, eps=10)    
     clusters = model.fit_predict(df)
-    return model, clusters
+    df['cluster'] = clusters
+    df = df[df['cluster'] != -1]
+    df.drop(columns=['cluster'], inplace=True)
+    print(f'After outlier detection, df set shape: {df.shape}')
 
-model, clusters = outlier_detection(train)
-train['cluster'] = clusters
-train = train[train['cluster'] != -1]
-train.drop(columns=['cluster'], inplace=True)
-print(f'After outlier detection, train set shape: {train.shape}')
+    X = df[INPUT_VARS]
+    y = df[RESPONSE_VARS]
+    return X, y
 
 # %% 
 ''' Train ML model on train set '''
 params_knn = {'n_neighbors': [2, 4, 6, 8], 'weights': ['uniform', 'distance']}
-grid = GridSearchCV(KNeighborsRegressor(n_jobs=-1), params_knn, scoring='neg_mean_absolute_error', cv=5, n_jobs=-1)
+params_svr = {'kernel': ['linear', 'rbf', 'sigmoid'], 'gamma': [0.001, 0.01, 0.05, 0.1, 1], 
+              'C': [5, 10, 20, 50, 100], 'epsilon': [0.001, 0.1, 0.2, 0.5, 1.0]}
+
+# grid = GridSearchCV(KNeighborsRegressor(n_jobs=-1), params_knn, scoring='neg_mean_absolute_error', cv=5, n_jobs=-1)
+grid = GridSearchCV(SVR(), params_svr, scoring='neg_mean_absolute_error', cv=5, n_jobs=-1)
+
+def cv_on_whole_train_set(data, model) -> None:
+    X = data[INPUT_VARS]
+    y = data[RESPONSE_VARS]
+
+    y_pred = cross_val_predict(model, X, y, cv=5)
+    plot_pred_vs_actual(y, y_pred, 'CV')
+
+X_train = data_A[INPUT_VARS]
+y_train = data_A[RESPONSE_VARS]
+
 grid.fit(X_train, y_train)
 model = grid.best_estimator_
-model.fit(X_train, y_train)
-y_pred = model.predict(X_val)
-plot_pred_vs_actual(y_val, y_pred, 'Accuracy on Validation')
+cv_on_whole_train_set(data, model)
 
 # %%
+''' Generate synthetic data '''
 from sdv.single_table import CTGANSynthesizer, GaussianCopulaSynthesizer, CopulaGANSynthesizer, TVAESynthesizer
 from sdv.metadata import SingleTableMetadata
 
 metadata = SingleTableMetadata()
 metadata.detect_from_dataframe(data=X_train)
 
-ctgan = CTGANSynthesizer(metadata)
+ctgan = CTGANSynthesizer(metadata, 
+                         embedding_dim=1028)
 ctgan.fit(X_train)
 
-gen = ctgan.sample(30)
-X_gen = gen[INPUT_VARS]
+X_gen = ctgan.sample(100)
 y_gen = model.predict(X_gen)
 y_gen = pd.DataFrame(y_gen, columns=y_train.columns)
+data_gen = X_gen.copy()
+data_gen['Limonene'] = y_gen['Limonene'].values
+data_gen = data_gen[data_gen['Limonene'] > 0]
+X_gen = data_gen[INPUT_VARS]
+y_gen = data_gen[RESPONSE_VARS]
 
 # %%
 params_knn = {'n_neighbors': [2, 4, 6, 8], 'weights': ['uniform', 'distance']}
-params_svr = {'kernel': ['linear', 'rbf', 'sigmoid'], 'gamma': [0.001, 0.01, 0.1, 1], 'C': [0.1, 0.5, 1.0, 2.0, 5.0], 'epsilon': [0.1, 0.2, 0.5, 1.0]}
+params_svr = {'kernel': ['linear', 'rbf', 'sigmoid'], 'gamma': [0.001, 0.01, 0.05, 0.1, 1], 
+              'C': [5, 10, 20, 50, 100], 'epsilon': [0.001, 0.1, 0.2, 0.5, 1.0]}
 
 def model_validation(grid, X_train, y_train, X_val, y_val, model_name):
     grid.fit(X_train, y_train)
@@ -109,8 +131,8 @@ def model_validation(grid, X_train, y_train, X_val, y_val, model_name):
     plot_pred_vs_actual(y_val, y_pred, model_name)
     return model
 
-grid = GridSearchCV(KNeighborsRegressor(n_jobs=-1), params_knn, scoring='neg_mean_absolute_error', cv=5, n_jobs=-1)
-# grid = GridSearchCV(SVR(), params_svr, scoring='neg_mean_absolute_error', cv=5, n_jobs=-1)
+# grid = GridSearchCV(KNeighborsRegressor(n_jobs=-1), params_knn, scoring='neg_mean_absolute_error', cv=5, n_jobs=-1)
+grid = GridSearchCV(SVR(), params_svr, scoring='neg_mean_absolute_error', cv=5, n_jobs=-1)
 
 # REAL data
 _ = model_validation(grid, X_train, y_train, X_val, y_val, 'Real Data')
@@ -139,11 +161,11 @@ _ = model_validation(grid, X_train_gen, y_train_gen, X_test, y_test, 'Real and S
 # %%
 from table_evaluator import TableEvaluator
 
-gen['Limonene'] = y_gen['Limonene'].values
+data_gen['Limonene'] = y_gen['Limonene'].values
 
-table_evaluator = TableEvaluator(train, gen)
+table_evaluator = TableEvaluator(train, data_gen)
 table_evaluator.visual_evaluation()
-plot_corr_heatmap(gen)
+plot_corr_heatmap(data_gen)
 plot_corr_heatmap(train)
 
 # %%
