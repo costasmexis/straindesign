@@ -93,7 +93,7 @@ exp_genetic = Dice(d, m, method="genetic")
 query_instances = pd.DataFrame(X_train.loc['B-Ml']).T
 genetic_housing = exp_genetic.generate_counterfactuals(query_instances,
                                                                total_CFs=2,
-                                                               desired_range=[3.0, 5.0])
+                                                               desired_range=[100, 103.0])
 genetic_housing.visualize_as_dataframe(show_only_changes=True)
 
 # %%
