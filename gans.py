@@ -44,20 +44,41 @@ X_test = data_B[INPUT_VARS]
 y_test = data_B[RESPONSE_VARS]
 
 # %% 
-''' Train ML model on train set '''
+''' Train ML models '''
+def ml_training(X_train, y_train, param_grid, model):
+    ''' Train ML model on train set '''
+    grid = GridSearchCV(model, param_grid, scoring='neg_mean_absolute_error', cv=5, n_jobs=-1)
+    grid.fit(X_train, y_train.values.ravel())
+    model = grid.best_estimator_
+    print(f'Best model: {model}')
+    return model
+
 params_knn = {'n_neighbors': [2, 4, 6, 8], 'weights': ['uniform', 'distance']}
 params_svr = {'kernel': ['linear', 'rbf', 'sigmoid'], 'gamma': [0.001, 0.01, 0.05, 0.1, 1], 
               'C': [5, 10, 20, 50, 100, 150, 200], 'epsilon': [0.001, 0.1, 0.2, 0.5, 1.0]}
 
-# grid = GridSearchCV(KNeighborsRegressor(n_jobs=-1), params_knn, scoring='neg_mean_absolute_error', cv=5, n_jobs=-1)
-grid = GridSearchCV(SVR(), params_svr, scoring='neg_mean_absolute_error', cv=5, n_jobs=-1)
-grid.fit(X_train, y_train.values.ravel())
-model = grid.best_estimator_
-print(f'Best model: {model}')
+model = ml_training(X_train, y_train, params_svr, SVR())
 cv_on_whole_train_set(data, model)
 
 # %%
-# import the necessary packages
+''' Counterfactual Explanation '''
+import dice_ml
+from dice_ml import Dice
+
+d = dice_ml.Data(dataframe=data_A, continuous_features=INPUT_VARS, outcome_name='Limonene')
+# We provide the type of model as a parameter (model_type)
+m = dice_ml.Model(model=model, backend="sklearn", model_type='regressor')
+exp_genetic = Dice(d, m, method="genetic")
+
+# Multiple queries can be given as input at once
+query_instances = X_train[2:4]
+genetic_housing = exp_genetic.generate_counterfactuals(query_instances,
+                                                               total_CFs=2,
+                                                               desired_range=[3.0, 5.0])
+genetic_housing.visualize_as_dataframe(show_only_changes=True)
+
+# %%
+''' OMLT '''
 from omlt import OmltBlock, OffsetScaling
 from omlt.io.keras import load_keras_sequential
 from omlt.neuralnet import ReluBigMFormulation, FullSpaceSmoothNNFormulation
@@ -107,7 +128,6 @@ predictions = nn.predict(x_test)
 predictions = predictions * y_factor['Limonene'] + y_offset['Limonene']
 print(predictions)
 
-''' OMLT '''
 # first, create the Pyomo model
 m = pyo.ConcreteModel()
 # create the OmltBlock to hold the neural network model
