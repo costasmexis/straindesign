@@ -33,7 +33,7 @@ def transform_data(df: pd.DataFrame) -> pd.DataFrame:
     data.drop('Optical Density', axis=1, inplace=True)
     return data
 
-def plot_corr_heatmap(df: pd.DataFrame) -> None:
+def plot_corr_heatmap(df: pd.DataFrame, title: str) -> None:
     ''' Calculate corr matrix and plot heatmap '''
     corr = df.corr()
     fig, ax = plt.subplots(figsize=(6, 6))
@@ -42,9 +42,10 @@ def plot_corr_heatmap(df: pd.DataFrame) -> None:
     plt.yticks(range(len(corr.columns)), corr.columns)
     for (i, j), z in np.ndenumerate(corr):
         ax.text(j, i, '{:0.1f}'.format(z), ha='center', va='center')
+    plt.title(title)
     plt.show()
 
-def pca_analysis(df, n_components=2, plot_contr=False):
+def pca_analysis(df: pd.DataFrame, n_components=2, plot_contr=False) -> None:
     ''' Perform PCA analysis and plot results'''
     pca = PCA(n_components=n_components)
     pca_df = pd.DataFrame(pca.fit_transform(df.drop('Limonene', axis=1)))
@@ -64,7 +65,7 @@ def pca_analysis(df, n_components=2, plot_contr=False):
         plt.ylabel('Proportion of Variance')
         plt.show()
 
-def tsne_analysis(df, n_components=2, perplexity=12):
+def tsne_analysis(df: pd.DataFrame, n_components=2, perplexity=12) -> pd.DataFrame:
     ''' Perform TSNE analysis and plot results'''
     tsne = TSNE(n_components=n_components, perplexity=perplexity)
     tsne_df = pd.DataFrame(tsne.fit_transform(df.drop('Limonene', axis=1)))
@@ -77,6 +78,8 @@ def tsne_analysis(df, n_components=2, perplexity=12):
     for i, txt in enumerate(tsne_df.index):
         plt.annotate(txt, (tsne_df[0][i], tsne_df[1][i]))
     plt.show()
+    tsne_df.columns = ['TSNE1', 'TSNE2']
+    return tsne_df
 
 def nested_cv(model, p_grid, X, y, n_trials = 3):
     nested_scores = []
