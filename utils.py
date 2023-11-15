@@ -45,10 +45,10 @@ def plot_corr_heatmap(df: pd.DataFrame, title: str) -> None:
     plt.title(title)
     plt.show()
 
-def pca_analysis(df: pd.DataFrame, n_components=2, plot_contr=False) -> None:
+def pca_analysis(df: pd.DataFrame, target_col='Limonene', n_components=2, plot_contr=False) -> None:
     ''' Perform PCA analysis and plot results'''
     pca = PCA(n_components=n_components)
-    pca_df = pd.DataFrame(pca.fit_transform(df.drop('Limonene', axis=1)))
+    pca_df = pd.DataFrame(pca.fit_transform(df.drop(target_col, axis=1)))
     pca_df.index = df.index
     plt.scatter(pca_df[0], pca_df[1], s=8, color='black')
     plt.xlabel('PC1')
@@ -65,10 +65,10 @@ def pca_analysis(df: pd.DataFrame, n_components=2, plot_contr=False) -> None:
         plt.ylabel('Proportion of Variance')
         plt.show()
 
-def tsne_analysis(df: pd.DataFrame, n_components=2, perplexity=12) -> pd.DataFrame:
+def tsne_analysis(df: pd.DataFrame, target_col='Limonene', n_components=2, perplexity=12) -> pd.DataFrame:
     ''' Perform TSNE analysis and plot results'''
     tsne = TSNE(n_components=n_components, perplexity=perplexity)
-    tsne_df = pd.DataFrame(tsne.fit_transform(df.drop('Limonene', axis=1)))
+    tsne_df = pd.DataFrame(tsne.fit_transform(df.drop(target_col, axis=1)))
     tsne_df.index = df.index
     # Plot TSNE1 vs TSNE2 with labels; control marker size
     plt.scatter(tsne_df[0], tsne_df[1], s=8, color='black')
@@ -109,8 +109,8 @@ def plot_pred_vs_actual(y_true, y_pred, model_name) -> None:
     plt.title(model_name)
     plt.show()
 
-def cv_on_whole_train_set(data, model) -> None:
-    X = data[INPUT_VARS]
-    y = data[RESPONSE_VARS]
+def cv_on_whole_train_set(data, model, input, response) -> None:
+    X = data[input]
+    y = data[response]
     y_pred = cross_val_predict(model, X, y, cv=5)
     plot_pred_vs_actual(y, y_pred, 'CV')
