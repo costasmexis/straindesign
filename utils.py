@@ -6,7 +6,6 @@ from sklearn.manifold import TSNE
 from sklearn.model_selection import cross_val_score, cross_validate, cross_val_predict, GridSearchCV
 from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
 from sklearn.model_selection import KFold
-from config import *
 from tqdm import tqdm
 
 def read_data(path: str) -> pd.DataFrame:
