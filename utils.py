@@ -44,25 +44,27 @@ def plot_corr_heatmap(df: pd.DataFrame, title: str) -> None:
     plt.title(title)
     plt.show()
 
-def pca_analysis(df: pd.DataFrame, target_col='Limonene', n_components=2, plot_contr=False) -> None:
-    ''' Perform PCA analysis and plot results'''
-    pca = PCA(n_components=n_components)
-    pca_df = pd.DataFrame(pca.fit_transform(df.drop(target_col, axis=1)))
-    pca_df.index = df.index
-    plt.scatter(pca_df[0], pca_df[1], s=8, color='black')
-    plt.xlabel('PC1')
-    plt.ylabel('PC2')
-    plt.rcParams.update({'font.size': 8})
-    for i, txt in enumerate(pca_df.index):
-        plt.annotate(txt, (pca_df[0][i], pca_df[1][i]))
+def plot_pca(pca_df: pd.DataFrame, pca: PCA) -> None:
+    fig, axes = plt.subplots(1, 2, figsize=(12, 6))
+    axes[0].scatter(pca_df['PC1'], pca_df['PC2'], s=pca_df['Limonene']*2, color='blue', marker='x', alpha=0.5)
+    axes[0].set_xlabel('PC1')
+    axes[0].set_ylabel('PC2')
+    axes[0].set_xlim([-5, 10])
+    axes[0].set_ylim([-2, 6])
+    axes[0].tick_params(labelsize=8)
+    axes[0].set_title('Scatter Plot')
+    points_to_label = pca_df[pca_df['Limonene'] > pca_df['Limonene'].quantile(0.9)]
+    for i in range(len(points_to_label)):
+        axes[0].text(points_to_label.iloc[i, 0], points_to_label.iloc[i, 1], points_to_label.index[i], fontsize=8)
+    pc_var = pca.explained_variance_ratio_
+    pc_var = np.round(pc_var * 100, decimals=1)
+    labels = ['PC' + str(x) for x in range(1, len(pc_var)+1)]
+    axes[1].bar(x=range(1, len(pc_var)+1), height=pc_var, tick_label=labels)
+    axes[1].set_ylabel('Percentage of Variance Explained')
+    axes[1].set_xlabel('Principal Component')
+    axes[1].set_title('Percentage of Variance Explained')
+    plt.tight_layout()
     plt.show()
-
-    if plot_contr:
-        plt.bar(range(1, 10), pca.explained_variance_ratio_)
-        plt.xticks(range(1, 10))
-        plt.xlabel('Principal Component')
-        plt.ylabel('Proportion of Variance')
-        plt.show()
 
 def tsne_analysis(df: pd.DataFrame, target_col='Limonene', n_components=2, perplexity=12) -> pd.DataFrame:
     ''' Perform TSNE analysis and plot results'''
